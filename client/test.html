@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script type="text/javascript" src="js/bn.js"></script>
+<script type="text/javascript" src="js/srp.js"></script>
+<script type="text/javascript">
+
+
+//SRP.setHost('ws://127.0.0.1:8080');
+//SRP.foo();
+//SRP.getKey('weir007', 'dcs123456');
+
+/*
+//var ws = new WebSocket('ws://localhost/mysrp/index.php');
+var ws = new WebSocket('ws://127.0.0.1:8080');
+ws.onmessage = function(evt) {
+	console.log(evt);
+	ws.close();
+}//https://stackoverflow.com/questions/48704691/html5-php-websocket-connection-to-failed-error-during-websocket-handshake-un
+		
+if (ws.readyState === 1) ws.send('hello from client');
+*/
+
+function output_msg(msg, area)
+{
+	if (!area)/* for IE */
+	{
+		area = document.querySelector('#record');
+	}
+	area.innerText += msg;
+	area.innerHTML += '<br/>';
+}
+
+window.onload = output_msg(SRP.start('weir007', 'QBZ95-1'));
+</script>
+</head>
+<body>
+<label id="record"></label>
+</body>
+</html>
+
+<!--?php
+/*
+  namespace service\lib;
+  use phpseclib\Math\BigInteger;
+
+  $x = new BigInteger('23', 16);
+  
+  $arr = ['a'=>1, 'b'=>2];
+  var_dump($arr);
+  */
+ echo "f**k ccit";-->
