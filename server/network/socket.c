@@ -278,7 +278,7 @@ static int process_recv(psock_t sock, int len)
 				 * data = round (1B, 0 stands for initialization) | message in hex (BE)
 
 				 */
-				 
+				
 				/**
 				 * 问题：高负载时如何处理？
 				 * 低负载时正常调用CPU程序，高负载时，如何积攒数据？
