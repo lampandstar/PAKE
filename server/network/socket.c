@@ -8,6 +8,7 @@
 
 #include "global.h"
 
+#include <assert.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -68,24 +69,26 @@ int sock_accept(psock_t sock, int client, struct sockaddr addr, socklen_t len)
 	}
 	
 	sock->stat = RECV;
-	sock->fd = client;
+	sock->fd = client;/* from listenning socket */
 	
+	/* record addr of the request arrived */
 	memcpy(&sock->client_in, addr, len);
 	
-	assert(IsIdle());
-	m_inactive_count = 0;
-	m_state = State_Busy;
-	assert(m_sClient == 0);
-	
+	assert(sock->stat == IDLE);
+	//m_inactive_count = 0;//?
+	//m_state = State_Busy;
+	assert(sock->fd == 0);
+
 	if (init_socket(sock->fd) != OK)
 	{
 		LOGE("Error : setsockopt failed.\n");
 		return ERR;/* or handle_err() */
 	}
 
-	evt.data.ptr = sock;/* or data_t? */
+	evt.data.ptr = sock;
 	evt.evt.events = EPOLLIN | EPOLLONESHOT | EPOLLET;
-
+	
+	/* join to epoll again*/
 	if (epoll_ctl(sock->epfd, EPOLL_CTL_ADD, sock->fd, &evt) < 0)
 	{
 		LOGE("Error : epoll_ctl error, code %d.\n", errno);
@@ -102,7 +105,8 @@ int sock_send(psock_t sock)
 	
 	do
 	{
-		ret = send(sock->fd, sock->buf + sock->fin, sock->total - sock->fin);
+		/* data shall be prepared before */
+		ret = send(sock->fd, sock->obuf + sock->fin, sock->total - sock->fin);
 		
 		if (ret < 0)
 		{
@@ -160,7 +164,12 @@ int sock_recv(psock_t sock)
 		return ERR;
 	}
 
-	ret = recv(sock->fd, sock->buf+sock->fin, SOCK_BUF_SIZE-sock->fin, 0);
+	/*
+	 Ethernet limits the length of message to 40~1500B
+	 int recv( SOCKET s, char FAR *buf, int len, int flags);
+	 
+	*/
+	ret = recv(sock->fd, sock->ibuf+sock->fin, SOCK_BUF_SIZE-sock->fin, 0);
 
 	if (ret < 0)
 	{
@@ -232,7 +241,7 @@ static int init_socket(int fd)
 
 static int process_recv(psock_t sock, int len)
 {
-	uint8_t b = sock->buf;
+	uint8_t * b = sock->ibuf;
 	sock->fin += len;
 	LOGD("%d bytes received.\n", len);
 	
@@ -245,7 +254,7 @@ static int process_recv(psock_t sock, int len)
 	{
 		LOGD("Getting total bytes.\n");
 		if (sock->fin > 3)
-			sock->total = GETU32(b);
+			sock->total = GETU32(b) - 5;
 		else
 			sock->recv(sock);
 	}
@@ -265,6 +274,7 @@ static int process_recv(psock_t sock, int len)
 	}
 	if (sock->fin == sock->total)
 	{
+		/* Put following procedures into srp.c? */
 		b += 5;/* jump over length and protocol byte */
 		switch (sock->proto)
 		{
@@ -274,11 +284,18 @@ static int process_recv(psock_t sock, int len)
 			 */
 			case SRP:
 				/**
-				 * deliver to SRP program
-				 * data = round (1B, 0 stands for initialization) | message in hex (BE)
-
+				 * deliver b to SRP program
 				 */
-				
+				 
+				/* AVX in CPU */
+				sock->total = SOCK_BUF_SIZE;
+				sock->fin = 0;
+				if (compute(sock->obuf, &(sock->total), b, sock->total-5) != SRP_OK)
+				{
+					LOGE("Error : computation failed.\n");
+					return ERR;
+				}
+				return sock.send();
 				/**
 				 * 问题：高负载时如何处理？
 				 * 低负载时正常调用CPU程序，高负载时，如何积攒数据？
@@ -293,6 +310,7 @@ static int process_recv(psock_t sock, int len)
 		/* Set socket to SEND or IDLE, then join into epoll */
 		//sock->stat = IDLE/BUSY/SEND
 		//sock->send(sock);
+		//sock->fin = sock->total = 0;
 	}
 	else
 	{

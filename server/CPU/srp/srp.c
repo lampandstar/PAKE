@@ -115,9 +115,13 @@ API int cpu_srp_server_compute(OUT char u[BN_CHARS],
 
 API int compute(OUT char * obuf, OUT size_t * olen, IN char * ibuf, IN size_t ilen)
 {
-	char u[BN_CHARS] = {0}, B[BN_CHARS] = {0}, S[BN_CHARS] = {0};
+	char u[BN_CHARS] = {0}, B[BN_CHARS] = {0}, S[BN_CHARS] = {0}, * split;
 	/* decode (A|v) */
-	char * split = strchr(ibuf, '|');
+	if ((split = strchr(ibuf, '|')) == NULL)
+	{
+		LOGE("Message format error: %s\n", ibuf);
+	}
+	
 	*split++ = 0;
 	
 	if (cpu_srp_server_compute(u, B, S, ibuf, split) != SRP_OK)

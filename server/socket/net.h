@@ -15,12 +15,17 @@
 #define SOCK_POOL_EXPAND	1
 #define BACKLOG_SIZE		10000/* max number of waiting connections */
 
-#define port 				8080
+#define IP
+#define PORT 				8080
 
 #define MAX_CORES			32
 #define EVENT_NUM			16
 
 #define BUF_SIZE			(BN_CHARS*3)
+
+
+
+//////////////////以下内容挪到 epoll.* 和 socket.*/////////////////
 
 /*******************************************************************************
  * SOCKET
@@ -44,6 +49,10 @@ typedef struct sc {
 	(int *)recv;
 } sock_t, *psock_t;
 
+
+/**
+ * 函数实现放在socket.c中
+ */
 sock_t sock_init(int idx)
 {
 	sock_t sock;
@@ -101,7 +110,7 @@ epoll_t epoll_init(IN char * ip, IN int port)
 		ep.addr = inet_addr(ip);
 	}
 	ep.exit = FALSE;
-	ep.port = port;
+	ep.port = PORT;
 	if ((ep.sock = calloc(SOCK_POOL_EXPAND, sizeof(sock_pool))) == NULL)
 	{
 		LOGE("Error : failed to create epoll.\n");
@@ -257,7 +266,7 @@ static int epoll_start(pepoll_t ep)
 	 * Since Linux 2.6.8, the size argument is ignored, but must be greater than zero
 	 */
 	ep->listener = epoll_create_listener();
-	
+
 	while (TRUE)
 	{
 		if (ep->exit)

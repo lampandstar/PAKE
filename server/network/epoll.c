@@ -10,6 +10,7 @@ epoll_t new_epoll(IN char * ip, IN int port)
 	epoll_t ep;
 	int i, j, idx;
 	
+	/* unified address for sockets of the same epoll */
 	if (ip == NULL)
 	{
 		ep.addr = INADDR_ANY;
@@ -20,6 +21,7 @@ epoll_t new_epoll(IN char * ip, IN int port)
 	}
 	ep.exit = FALSE;
 	ep.port = port;
+	/* allocate space for pool of sockets' ID */
 	if ((ep.sock = calloc(SOCK_POOL_EXPAND, sizeof(sock_pool))) == NULL)
 	{
 		LOGE("Error : failed to create epoll.\n");
@@ -28,6 +30,7 @@ epoll_t new_epoll(IN char * ip, IN int port)
 	ep.sock_size = SOCK_POOL_EXPAND;
 	ep.idle_socks = fd_queue_init();
 	
+	/* initialize the socket pool */
 	for (i=0; i<ep.sock_size; i++)
 	{
 		idx = i*SOCK_POOL_SIZE;
@@ -37,7 +40,7 @@ epoll_t new_epoll(IN char * ip, IN int port)
 			ep.idle_socks.push(idx + j);
 		}
 	}
-	
+
 	/* assign methods to object */
 	ep.start = epoll_start;
 	ep.stop = epoll_stop;
@@ -161,7 +164,7 @@ int epoll_start(pepoll_t ep)
 {
 	int i, j, n, nfds;
 	struct epoll_event evt[EVENT_NUM];
-	psdata_t evt_data;
+	//psdata_t evt_data;
 	psock_t sock;
 	
 	if ((ep->fd = epoll_create(EPOLL_SIZE)) < 0)
@@ -174,7 +177,7 @@ int epoll_start(pepoll_t ep)
 	 * int epoll_create(int size)
 	 * Since Linux 2.6.8, the size argument is ignored, but must be greater than zero
 	 */
-	ep->listener = epoll_create_listener();
+	ep->listener = epoll_create_listener(ep);
 	
 	while (TRUE)
 	{
@@ -193,11 +196,15 @@ int epoll_start(pepoll_t ep)
 			if (evt[i].data.fd != ep->listener)
 			{
 				/* data to r/w : get socket id from event.data.ptr */
+#if 1
+				sock = (psock_t)evt[i].data.ptr;
+#else
 				evt_data = (psdata_t)evt[i].data.ptr;
 				n = evt_data->idx / SOCK_POOL_SIZE;
 				j = evt_data->idx % SOCK_POOL_SIZE;
 				sock = ep->sock[n][j];
-
+#endif
+				
 				if (evt[i].events & EPOLLIN)
 				{
 					/* begin or continue recv */

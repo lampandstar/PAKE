@@ -36,6 +36,10 @@
 			return null;
 		}
 		#socket established
+		
+		#add header (protocol & length) to message
+		$len = strlen($msg) + 1;
+		
 		/* send message */
 		//if(!socket_sendto($sock, $buf, strlen($buf), 0, $server_ip, $port))
 		if (($written = socket_write($sock, $msg)) == false)
@@ -47,8 +51,15 @@
 		else
 		{
 			#echo $written."B written.";
+			/*
+			 socket_read ( resource $socket , int $length [, int $type = PHP_BINARY_READ ] ) : string
+			 return FALSE if the connection is closed by remote host or some error occurs
+			*/
 			/* receive results ending with '\r', '\n' or '\0' */
 			return socket_read($sock, 1024, PHP_NORMAL_READ);
+			/*
+			 socket_recv()
+			*/
 		}
 		/* close socket */
 		socket_close($sock);

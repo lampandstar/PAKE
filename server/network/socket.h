@@ -38,7 +38,8 @@ typedef struct sc {
 	int idx, fd, epfd;
 	struct sockaddr client_in;
 	
-	uint8_t buf[SOCK_BUF_SIZE];
+	uint8_t ibuf[SOCK_BUF_SIZE];
+	uint8_t obuf[SOCK_BUF_SIZE];
 	size_t total, fin;/* all bytes to receive, finished bytes */
 	
 	(int *)accept;
