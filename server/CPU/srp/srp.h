@@ -11,7 +11,6 @@
 #define SRP_ERR		-1
 
 #include "global.h"
-#include "params.h"
 #include "avx_bn.h"
 
 #define COMMON_MSG_CHARS	65//sha256.output_byts*2 + '\0'
@@ -32,13 +31,9 @@ API int cpu_srp_init();
  * return u, B, S 
  * suppose hash-related values, such as M2 and K， are computed in http-server
  */
-API int cpu_srp_server_compute(OUT char u[BN_CHARS], 
-		OUT char B[BN_CHARS], OUT char S[BN_CHARS], 
-		IN char A[BN_CHARS], IN char v[BN_CHARS]);
-
-API int compute(OUT char * obuf, OUT size_t * olen, IN char * ibuf, IN size_t ilen);
+API int cpu_srp_get_resp(OUT char * obuf, OUT size_t * olen, IN char * ibuf);
 		
-#else//Common Optimized SRP
+#else//Common SRP
 /**
  * {A=g**a, v=DB.select(UserID=C)} => {B=v+g**b, u, S=(A·v**u)**b}
  */

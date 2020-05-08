@@ -18,9 +18,6 @@
 #include "srp.h"
 #include "net.h"
 
-/* global objects */
-epoll_t g_ep[MAX_CORES];
-
 
 
 static int get_cpu_core()
@@ -37,44 +34,38 @@ static int get_cpu_core()
 /* Run epoll on relevant CPU core */
 void * start_listen(void * arg)
 {
-#if 0	
+	
+	
+	
+	
+	
 	int fd, new_fd, struct_len, numbyts, core = *(int *)arg, i;
 	char buf[BUF_SIZE] = {0};
 	
 	struct sockaddr_in server_addr, client_addr[SOCK_POOL_SIZE];
-
+	
 	/* Set socket info */
 	server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(port);
     server_addr.sin_addr.s_addr = INADDR_ANY;
 
     struct_len = sizeof(struct sockaddr_in);
-#endif
-	/* set epoll's id */
-	int core = *(int *)arg;
-	g_ep[core] = new_epoll(NULL, PORT);
-	g_ep.start();
-		
-	return NULL;
+
+	
 }
 
-
-/**
- * arg: number of listenning thread to launch
- */
 int main(int argc, char * const argv[])
 {
 	int i, thread_count = get_cpu_core();
 	pthread_t pthread[MAX_CORES];
 	cpu_set_t cpuset;
-		
+	
 	if (argc > 0)
 	{
 		thread_count = atoi(argv[0]);
+		thread_count = thread_count > MAX_CORES ? MAX_CORES : thread_count;
+		LOG("Thread count reset to %d.\n", thread_count);
 	}
-	
-	thread_count = thread_count > MAX_CORES ? MAX_CORES : thread_count;
-	LOG("Thread count reset to %d.\n", thread_count);
 	
 	for (i=0; i<thread_count; i++)
 	{

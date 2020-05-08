@@ -2,9 +2,8 @@
  * @fileOverview GF(p) implementation with AVX512
  * @author weir007
  */
-
-#include <string.h>
 #include <stdio.h>
+#include <string.h> 
 #include "avx_bn.h"
 
 #define ALIGN(a, x)		a __attribute__ ((aligned (x)))
@@ -22,8 +21,6 @@ static inline double make_double(IN uint64_t l);
 static inline void make_doubles(OUT double r[DIGITS], IN bn a);
 
 static inline void int2dpf(OUT bf r, IN bn a);
-
-static inline uint64_t compute_np0(uint64_t n0);
 
 static inline uint64_t make_initial(int low, int high);
 
@@ -48,7 +45,7 @@ static __m512i _rotate_up, _rotate_down;
 void bn_init()
 {
 	_zero = _mm512_setzero_si512();
-	_ones = _mm512_set1_epi64(MASK_ALL_ONE);
+	_ones = _mm512_set1_epi64(MASK52);
 	_sixteen = _mm512_set1_epi64(make_initial(16, 16));
 	_c1 = _mm512_set1_pd(make_double(0x4670000000000000ull));
 	_c2 = _mm512_set1_pd(make_double(0x4670000000000001ull));
@@ -100,8 +97,7 @@ void bin_read_hex(OUT uint8_t r[MAX_BYTS], IN char * str)
 		r[j] >>= 4;
 	}
 }
- 
- 
+
 void bn_read_hex(OUT bn r, IN char * str)
 {
 	size_t len = strlen(str);
@@ -118,12 +114,12 @@ void bn_to_hex(OUT char r[BN_CHARS], IN bn a)
 	uint64_t * t = (uint64_t *)(a+TERMS-1);
 	char * p = r;
 		
-	sprintf(p, "%llx", t[j--] & MASK_ALL_ONE);
+	sprintf(p, "%llx", t[j--] & MASK52);
 	p += strlen(r);//or (MAX_BITS % 52 + 3)>>1
 	
 	for (; j>=0; j--)
 	{
-		sprintf(p, "%013llx", t[j] & MASK_ALL_ONE);
+		sprintf(p, "%013llx", t[j] & MASK52);
 		p += 13;
 	}
 	for (i=TERMS-2; i>=0; i--)
@@ -131,7 +127,7 @@ void bn_to_hex(OUT char r[BN_CHARS], IN bn a)
 		t = (uint64_t *)(a + i);
 		for (j=TERM_DIGITS-1; j>=0; j--)
 		{
-			sprintf(p, "%013llx", t[j] & MASK_ALL_ONE);
+			sprintf(p, "%013llx", t[j] & MASK52);
 			p += 13;
 		}
 	}
@@ -155,7 +151,6 @@ void bn_load_bin(OUT bn dst, IN uint8_t src[MAX_BYTS])
 		      shift = _mm512_setr_epi64(0, 4, 8, 12, 0, 4, 8, 12), data;
 			  //_ones = _mm512_set1_epi64(0x000FFFFFFFFFFFFF)
 
-			  
 	for (i=0; i<TERMS-1; i++)
 	{
 		/* 52B => 52b * 8 */
@@ -210,18 +205,18 @@ void bn_print(IN bn a)
 	int i, j = MAX_BYTS%52 >> 3;
 	uint64_t * t = (uint64_t *)(a+TERMS-1);
 	
-	printf("%llX", t[j--] & MASK_ALL_ONE);
+	printf("%llX", t[j--] & MASK52);
 	
 	for (; j>=0; j--)
 	{
-		printf("%013llX", t[j] & MASK_ALL_ONE);
+		printf("%013llX", t[j] & MASK52);
 	}
 	for (i=TERMS-2; i>=0; i--)
 	{
 		t = (uint64_t *)(a + i);
 		for (j=TERM_DIGITS-1; j>=0; j--)
 		{
-			printf("%013llX", t[j] & MASK_ALL_ONE);
+			printf("%013llX", t[j] & MASK52);
 		}
 	}
 	printf("\n");
@@ -271,12 +266,12 @@ static void bn_add(OUT bn r, IN bn a, IN bn b)
 		t = _mm512_add_epi64(a[i], b[i]);
 		t = _mm512_mask_add_epi64(t, 0x1, t, c0);//absorb carry from last term
 		/* inner carry absorb */
-		c0 = _mm512_srli_epi64(t, DIGIT_BITS);//c : [{0,1}, {0,1}, ... ,{0,1}]
+		c0 = _mm512_srli_epi64(t, 52);//c : [{0,1}, {0,1}, ... ,{0,1}]
 		c0 = _mm512_alignr_epi64(c0, c0, 7);//c: [c_7, c_6, ..., c_1, c_next]
 		t = _mm512_and_epi64(t, _ones);
 		t = _mm512_mask_add_epi64(t, 0xfe, t, c0);//allow carry-holding?
 		/* thoroughly absorb */
-		c1 = _mm512_srli_epi64(t, DIGIT_BITS);
+		c1 = _mm512_srli_epi64(t, 52);
 		c1 = _mm512_alignr_epi64(c1, c1, 7);//c: [c_7, c_6, ..., c_1, c_next]
 		t = _mm512_and_epi64(t, _ones);
 		r[i] = _mm512_mask_add_epi64(t, 0xfe, t, c1);//allow carry-holding?
@@ -293,7 +288,7 @@ static void bn_sub(OUT bn r, IN bn a, IN bn b)
 	uint8_t mask = 0xff;
 	int i, cmp;
 	bn itemp;
-	__m512i tail_mask = _mm512_maskz_set1_epi64((1<<DIGITS%TERM_DIGITS)-1, MASK_ALL_ONE);
+	__m512i tail_mask = _mm512_maskz_set1_epi64((1<<DIGITS%TERM_DIGITS)-1, MASK52);
 
 	for (i=0; i<TERMS; i++)
 	{
@@ -406,17 +401,6 @@ static inline void int2dpf(OUT bf r, IN bn a)
 	}
 }
 
-
-static inline uint64_t compute_np0(uint64_t n0)
-{
-	uint64_t inv64 = n0*(n0*n0+14);
-	inv64 = inv64*(inv64*n0+2);
-	inv64 = inv64*(inv64*n0+2);
-	inv64 = inv64*(inv64*n0+2);
-	inv64 = inv64*(inv64*n0+2);
-	return inv64;
-}
-
 static inline uint64_t make_initial(int low, int high)
 {
 	uint64_t x = low*0x433 + high*0x467;
@@ -434,7 +418,7 @@ static void mont_mul(OUT bn r, IN bf a, IN double b[DIGITS], IN const bf n)
 	
 #if 0//公共参数，不宜反复生成
 	__m512i _zero = _mm512_setzero_si512(),
-	        _ones = _mm512_set1_epi64(MASK_ALL_ONE),
+	        _ones = _mm512_set1_epi64(MASK52),
 	     _sixteen = _mm512_set1_epi64(make_initial(16, 16)),
 	 _rotate_down = _mm512_setr_epi64(1, 2, 3, 4, 5, 6, 7, 8),
 	   _rotate_up = _mm512_setr_epi64(7, 8, 9, 10, 11, 12, 13, 14);
@@ -481,7 +465,7 @@ static void mont_mul(OUT bn r, IN bf a, IN double b[DIGITS], IN const bf n)
 		
 		/* montgomery */
 		q = (uint64_t)_mm_cvtsi128_si64(_mm512_castsi512_si128(low[0]));
-		q = (q * np0) & MASK_ALL_ONE;//qi = n*np0
+		q = (q * np0) & MASK52;//qi = n*np0
 		qi = _mm512_set1_pd((double)q);
 		//(pqh, pl) = S + qi*(a*b[idx])
 		pqh = _mm512_fmadd_round_pd(n[0], qi, _c1, _MM_FROUND_TO_ZERO|_MM_FROUND_NO_EXC);

@@ -79,9 +79,9 @@ static void rand_bin(uint8_t *r, size_t count)
  * return b, u, B, S 
  * suppose hash-related values, such as M2 and K， are computed in http-server
  */
-API int cpu_srp_server_compute(OUT char u[BN_CHARS], 
+static int cpu_srp_server_compute(OUT char u[BN_CHARS], 
 		OUT char B[BN_CHARS], OUT char S[BN_CHARS], 
-		IN char A[BN_CHARS], IN char v[BN_CHARS])
+		IN char * A, IN char * v)
 {
 	bn bn_u, bn_b, bn_v, bn_a, bn_tmp;
 	uint8_t rnd[MAX_BYTS*2];
@@ -113,9 +113,10 @@ API int cpu_srp_server_compute(OUT char u[BN_CHARS],
 }
 
 
-API int compute(OUT char * obuf, OUT size_t * olen, IN char * ibuf, IN size_t ilen)
+API int cpu_srp_get_resp(OUT char * obuf, OUT size_t * olen, IN char * ibuf)
 {
 	char u[BN_CHARS] = {0}, B[BN_CHARS] = {0}, S[BN_CHARS] = {0}, * split;
+	size_t len;
 	/* decode (A|v) */
 	if ((split = strchr(ibuf, '|')) == NULL)
 	{
@@ -130,15 +131,15 @@ API int compute(OUT char * obuf, OUT size_t * olen, IN char * ibuf, IN size_t il
 	}
 	/* encode */
 	memset(obuf, 0, *olen);
-	ilen = strlen(u) + strlen(B) + strlen(S) + 3;
-	if (ilen > *olen)
+	len = strlen(u) + strlen(B) + strlen(S) + 3;
+	if (len > *olen)
 	{
 		LOGE("Output buffer is too small.\n");
 		return SRP_ERR;
 	}
 	else
 	{
-		*olen = ilen + 2;
+		*olen = len + 2;
 	}
 	
 	strcpy(obuf, u);

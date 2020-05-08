@@ -8,29 +8,11 @@
 #include <stdint.h>
 #include <immintrin.h>
 #include "global.h"
-#include "params.h"
 
-
-
-#define CMP_EQ			0
-#define CMP_GT			1
-#define CMP_LT			-1
-
-
-//#define RADIX_BITS		52
-#define MAX_BITS		MODULO_SIZE
-#define MAX_BYTS		((MAX_BITS+7) >> 3)
-#define MAX_WDS			((MAX_BYTS+1) >> 1)
-#define MAX_BWDS		((MAX_WDS +1) >> 1)
-#define MAX_QWDS		((MAX_BWDS+1) >> 1)
-#define BN_CHARS		((MAX_BYTS<<1) + 1)
-#define TERM_BITS		416//(512/64*52)
+#define TERM_DIGITS		8
+#define TERM_BITS		(52 * TERM_DIGITS)//416
 #define DIGITS			((MAX_BITS + 51) / 52)
 #define TERMS			((MAX_BITS + (TERM_BITS-1)) / TERM_BITS)
-#define TERM_DIGITS		8
-#define DIGIT_BITS		52
-
-#define MASK_ALL_ONE	0xFFFFFFFFFFFFFull
 
 
 typedef __m512i bn[TERMS];
