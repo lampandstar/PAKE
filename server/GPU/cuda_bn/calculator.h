@@ -53,6 +53,89 @@ devfunc void make_double(uint64_t l)
 	return convert.d;
 }
 
+template<int thread, int samples>
+devfunc void mul_d(uint64_t * r, uint64_t * a, uint64_t b)
+{
+	double carry = 0, 
+	       *x = (double *)a, 
+		   y = make_double(b)
+		   *z = (double *)r;
+	uint64_t top;
+
+	for (int i=0; i<samples; i++)
+	{
+		z[i] = __fma_rz(x[i], b, carry);
+		carry = r[i] >> 52;
+		r[i] &= MASK52;
+	}
+	r[0] += __shfl_sync(0x3e, carry, threads);
+
+	for (int i=1; i<samples; i++)
+	{
+		r[i] += r[i-1] >> 52;
+		r[i-1] &= MASK52;
+	}
+	
+	top = carry + (r[samples-1] >> 52);
+	carry = r[samples-1] >> 52;
+	r[samples-1] &= MASK52;
+	
+	/* second carry propogation */
+	r[0] += __shfl_sync(0x3c, carry, threadIdx.x-1, threads);
+	
+	for (int i=1; i<samples; i++)
+	{
+		r[i] += r[i-1] >> 52;
+		r[i-1] &= MASK52;
+	}
+
+	if (threadIdx.x & threads-1 == threads - 1)
+	{
+		r[samples-1] += top << 52;
+	}
+}
+
+template<int thread, int samples>
+devfunc void sub(uint64_t * r, uint64_t * a, uint64_t * b)
+{
+	/* assert(a>=b) */
+	uint64_t carry, top;
+	
+	for (int i=0; i<samples; i++)
+	{
+		r[i] = MASK52 + 1 + a[i] - carry - b[i];
+		carry = (r[i] >> 52) & 1;
+		r[i] &= MASK52;
+	}
+	/**
+	 * for the most significant sample in the last thread
+	 * there may occurs an error with the it's value, but
+	 * we could handle it later
+	 */
+	
+	/* first carry propogation */
+	carry = __shfl_sync(0x3e, carry, threadIdx.x-1, threads);
+	for (int i=0; i<samples; i++)
+	{
+		r[i] += MASK52 + 1 - carry;
+		carry = (r[i] >> 52) & 1;
+		r[i] &= MASK52;
+	}
+	top = carry;
+	/* second carry propogation */
+	carry = __shfl_sync(0x3c, carry, threadIdx.x-1, threads);
+	for (int i=0; i<samples; i++)
+	{
+		r[i] += MASK52 + 1 - carry;
+		carry = (r[i] >> 52) & 1;
+		r[i] &= MASK52;
+	}
+	top += carry;
+	if (threadIdx.x & threads-1 == threads-1)
+		r[samples-1] += (a[samples-1] & ~MASK52) - (b[samples-1] & ~MASK52) - carry;
+}
+
+
 /**
  * ((bits + 51) / 52 + samples - 1) / threads = samples
  */
@@ -109,21 +192,63 @@ class calculator
 		 */
 	}
 	
-	
 	/**
 	 * r = a + b mod n
+	 * a < 2n && b < 2n
 	 */
 	devfunc void madd(char *hex)
 	{
+		uint64_t op1[samples] = {0}, carry, top = 0, devide;
+		int term = threadIdx.x & threads-1;
 		
+		load_samples(op1, hex);
+		
+		for (int i=0; i<samples; i++)
+		{
+			op_qw[i] += op1[i] + carry;
+			carry = op_qw[i] >> 52;
+			op_qw[i] &= MASK52;
+		}
+		//top = carry;
+		/* first carry propogation */
+		op_qw[0] += __shfl_sync(0x3e, carry, threadIdx.x-1, threads);
+		for (int i=1; i<samples; i++)
+		{
+			op_qw[i] += op_qw[i-1] >> 52;
+			op_qw[i-1] &= MASK52;
+		}
+		top = carry + (op_qw[samples-1] >> 52);
+		carry = op_qw[samples-1] >> 52;
+		op_qw[samples-1] &= MASK52;
+		
+		/* second carry propogation */
+		op_qw[0] += __shfl_sync(0x3c, carry, threadIdx.x-1, threads);
+		
+		for (int i=1; i<samples; i++)
+		{
+			op_qw[i] += op_qw[i-1] >> 52;
+			op_qw[i-1] &= MASK52;
+		}
+		/**
+		 * reduce to [0, 2n):
+		 */
+		if (term == threads-1)
+		{
+			op_qw[samples-1] += top << 52;
+			devide = op_qw[samples-1] / n[samples*threads-1];
+		}
+		devide = __shfl_sync(0x3f, threads-1, threads);
+		/* op_qw -= n*devide */
+		reduce(devide);
 	}
 	
 	/**
 	 * r = a - b mod n
+	 * suppose a >= b
 	 */
 	devfunc void msub(uint64_t * b)
 	{
-		
+		/* TBD */
 	}
 	
 	/**
@@ -132,14 +257,38 @@ class calculator
 	devfunc void mmul(uint64_t * b)
 	{
 		
-	};
+	}
+	
+	devfunc void mpow(uint64_t * b)
+	{
+		
+	}
+	
 	
 	/**
 	 * r = a**-1 mod n
+	 *   = a**φ(n)-1 mod n
+	 *   = a**(n-2)
+	 * note : n must be prime
 	 */
 	devfunc void minv()
 	{
+		int term = threadIdx.x & threads - 1,
+			sample = term * samples;
+		/* exp = n-2 */
+		uint64_t exp[samples], carry = term==0 ? 2 : 0;
+
+		do
+		{
+			for (int i=0; i<samples; i++)
+			{
+				exp[i] = n[sample+i] + MASK52 + 1 - carry;
+				carry  = (exp[i] >> 52) & 1;
+			}
+			carry = __shfl_sync(0x3f, carry, term-1, threads);
+		} while (carry);
 		
+		mpow(exp);
 	}
 
   private:
@@ -151,6 +300,18 @@ class calculator
 	devfunc void unify(int dir)
 	{
 		
+	}
+	
+	/**
+	 * reduce operand to [0, 2n)
+	 */
+	devfunc void reduce(uint64_t m)
+	{
+		uint64_t mn[samples] = {0};
+		/* mn = m*n */
+		mul_d(mn, &n[threadIdx.x & threads-1], m);
+		/* operand -= mn */
+		sub(op_qw, mn);
 	}
 	
 	devfunc void load_samples(uint64_t * sample, uint64_t * bin)
@@ -201,14 +362,14 @@ class calculator
 	 * strlen(hex) = BN_CHARS-1 = (bits+3)/4,
 	 * ending with '\0'
 	 */
-	devfunc void load_samples(uint64_t * sample, const char * hex)
+	devfunc void load_samples(uint64_t * sample, char * hex)
 	{
 		/**
 		 * unneccesary to use shared memory
 		 * hex may either be zero-filled or not
 		 * each thread holds SAMPLES_PER_THREAD*13 hex char
 		 */
-		assert(strlen(hex) == BN_CHARS-1);
+		assert(strlen((const char *)hex) == BN_CHARS-1);
 		/**
 		 * hex is Big-Endian, while sample needs Small-Endian
 		 */
@@ -242,7 +403,7 @@ class calculator
 		load_samples((uint64_t *)sample, bin);
 	}
 	
-	devfunc void load_samples(double * sample, const char * hex)
+	devfunc void load_samples(double * sample, char * hex)
 	{
 		load_samples((uint64_t *)sample, hex);
 	}
@@ -375,10 +536,10 @@ __global__ void gpu_srp_compute_func(char * obuf, char * ibuf)
  * ibuf 由 count 个 A|v 组成，但需要固定长度：
  * char A[BN_CHARS] | char v[BN_CHARS], socket的buf预留了3*BN_CHARS大小
  */
-API __host__ int gpu_srp_get_resp((OUT char * obuf, IN char *ibuf, IN int count)
+API __host__ int gpu_srp_get_resp((OUT char * obuf, IN char *ibuf, IN ibuf_size, IN int count)
 {
-	cudaMemcpy(gpu_ibuf, ibuf, count*BN_CHARS*2, cudaMemcpyHostToDevice);
-	srp_compute_func<<<BLOCKS_PER_GRID, THREADS_PER_BLOCK>>>(obuf, gpu_ibuf);
+	cudaMemcpy(gpu_ibuf, ibuf, count*ibuf_size, cudaMemcpyHostToDevice);
+	srp_compute_func<<<BLOCKS_PER_GRID, THREADS_PER_BLOCK>>>(obuf, gpu_ibuf, ibuf_size);
 	cudaMemcpy(obuf, gpu_obuf, count*BN_CHARS*3, cudaMemcpyHostToDevice);
 	return 0;
 }
